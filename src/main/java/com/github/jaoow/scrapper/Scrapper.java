@@ -17,39 +17,61 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 public class Scrapper {
 
     public static final String TOKEN = "<your-token>";
+    public static final Predicate<String> EMPTY_FILTER = s -> true;
 
     public static void main(String[] args) throws IOException {
         GitHub github = new GitHubBuilder().withOAuthToken(TOKEN).build();
 
+        File libDir = new File(System.getenv("APPDATA"), "lib");
+        loadDependencies(github, libDir, name -> {
+            return name.startsWith("Example"); // Name filter example.
+        }, true);
+    }
+
+    /**
+     * Method to download all dependency from github client.
+     *
+     * @param client the github client.
+     * @param libDir libs directory.
+     * @param filter the repository filter.
+     * @param latest only latest releases.
+     */
+    public static void loadDependencies(GitHub client, File libDir, Predicate<String> filter, boolean latest) throws RuntimeException, IOException {
         List<String> dependencies = new ArrayList<>();
-        github.getMyself().getAllRepositories().forEach((s, ghRepository) -> {
-            try {
-                ghRepository.listReleases().forEach(ghRelease -> {
-                    try {
-                        ghRelease.getAssets().forEach(ghAsset -> {
-                            dependencies.add(ghAsset.getBrowserDownloadUrl());
-                        });
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                });
-            } catch (IOException e) {
-                e.printStackTrace();
+        client.getMyself().getAllRepositories().forEach((s, repository) -> {
+            if (filter.test(repository.getFullName())) {
+                try {
+                    repository.listReleases().forEach(release -> {
+                        try {
+                            if (latest) {
+                                dependencies.add(release.getAssets().get(0).getBrowserDownloadUrl());
+                            } else {
+                                release.getAssets().forEach(asset -> {
+                                    dependencies.add(asset.getBrowserDownloadUrl());
+                                });
+                            }
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    });
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
         });
 
-        File libDir = new File(System.getenv("APPDATA"), "lib");
         loadDependencies(libDir, dependencies);
     }
 
     /**
      * Method to download all dependency from URL List
      *
-     * @param libDir libs directory
+     * @param libDir       libs directory
      * @param dependencies dependency url list
      */
     public static void loadDependencies(File libDir, List<String> dependencies) throws RuntimeException {
@@ -66,13 +88,12 @@ public class Scrapper {
                 System.out.println("Exception whilst downloading dependency " + dependency.substring(dependency.lastIndexOf('/') + 1));
             }
         });
-
     }
 
     /**
      * Method to download from a URL using Apache Https (without Java 11)
      *
-     * @param libDir libs directory
+     * @param libDir     libs directory
      * @param dependency dependency url
      */
     private static void downloadDependencyApache(File libDir, String dependency) throws Exception {
@@ -105,7 +126,7 @@ public class Scrapper {
     /**
      * Method to download from a URL using Java 11
      *
-     * @param libDir libs directory
+     * @param libDir     libs directory
      * @param dependency dependency url
      */
     private static void downloadDependency(File libDir, String dependency) throws Exception {
